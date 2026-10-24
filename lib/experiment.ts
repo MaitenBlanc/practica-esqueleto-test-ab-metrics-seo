@@ -72,8 +72,17 @@ export function emptyLog(): ExperimentLog {
 }
 
 export function assignVariant(_visitorId: string): Variant {
-  // TODO: hash estable. El mismo id tiene que devolver siempre la misma variante.
-  return 'a'
+  // Convierte  el string del ID en un entero usando un algoritmo de hash estándar (DJB2/Java hashCode)
+  let hash = 0;
+  for (let i = 0; i < _visitorId.length; i++) {
+    const char = _visitorId.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Forzar a que sea un entero de 32 bits
+  }
+  
+  // Usa el módulo 2 sobre el valor absoluto del hash
+  // Si el resto es 0, asigna 'a' (Control). Si es 1, asigna 'b' (Tratamiento).
+  return Math.abs(hash) % 2 === 0 ? 'a' : 'b';
 }
 
 export function conversionRate(_stats: VariantStats): number | null {
