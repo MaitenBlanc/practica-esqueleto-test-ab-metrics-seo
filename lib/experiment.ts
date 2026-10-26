@@ -86,7 +86,9 @@ export function assignVariant(_visitorId: string): Variant {
 }
 
 export function conversionRate(_stats: VariantStats): number | null {
-  // TODO: conversiones / impresiones. Sin impresiones, devolver null, no 0.
+  // Sin impresiones, devolver null, no 0
+  if (_stats.impressions === 0) return null 
+  return _stats.conversions / _stats.impressions
   return null
 }
 
@@ -98,7 +100,16 @@ export function rateGap(log: ExperimentLog): number | null {
 }
 
 export function parseLog(_raw: string | undefined): ExperimentLog {
-  // TODO: validar el JSON antes de usarlo. Si falla, log vacío.
+  if (!_raw) return emptyLog()
+  try {
+    const parsed = JSON.parse(_raw)
+    // Validar que el JSON tenga la estructura correcta antes de usarlo
+    if (parsed?.a?.impressions !== undefined && parsed?.b?.impressions !== undefined) {
+      return parsed as ExperimentLog
+    }
+  } catch (error) {
+    // Si el JSON está roto, devolver log vacío
+  }
   return emptyLog()
 }
 
