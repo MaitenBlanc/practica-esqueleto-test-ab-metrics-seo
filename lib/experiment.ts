@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
 export type Variant = 'a' | 'b'
 
 export type VariantStats = {
@@ -87,9 +90,8 @@ export function assignVariant(_visitorId: string): Variant {
 
 export function conversionRate(_stats: VariantStats): number | null {
   // Sin impresiones, devolver null, no 0
-  if (_stats.impressions === 0) return null 
+  if (_stats.impressions <= 0) return null
   return _stats.conversions / _stats.impressions
-  return null
 }
 
 export function rateGap(log: ExperimentLog): number | null {
@@ -99,15 +101,37 @@ export function rateGap(log: ExperimentLog): number | null {
   return (treatment - control) * 100
 }
 
+function isValidStats(value: unknown): value is VariantStats {
+  if (!value || typeof value !== 'object') return false
+  const stats = value as Record<string, unknown>
+  return (
+    typeof stats.impressions === 'number' &&
+    Number.isFinite(stats.impressions) &&
+    stats.impressions >= 0 &&
+    typeof stats.conversions === 'number' &&
+    Number.isFinite(stats.conversions) &&
+    stats.conversions >= 0
+  )
+}
+
 export function parseLog(_raw: string | undefined): ExperimentLog {
   if (!_raw) return emptyLog()
   try {
-    const parsed = JSON.parse(_raw)
-    // Validar que el JSON tenga la estructura correcta antes de usarlo
-    if (parsed?.a?.impressions !== undefined && parsed?.b?.impressions !== undefined) {
-      return parsed as ExperimentLog
+    const parsed = JSON.parse(_raw) as Record<string, unknown>
+    // Validar que el JSON tenga la estructura y tipos numéricos correctos antes de usarlo
+    if (isValidStats(parsed?.a) && isValidStats(parsed?.b)) {
+      return {
+        a: {
+          impressions: Math.floor(parsed.a.impressions),
+          conversions: Math.floor(parsed.a.conversions),
+        },
+        b: {
+          impressions: Math.floor(parsed.b.impressions),
+          conversions: Math.floor(parsed.b.conversions),
+        },
+      }
     }
-  } catch (error) {
+  } catch {
     // Si el JSON está roto, devolver log vacío
   }
   return emptyLog()
@@ -115,6 +139,46 @@ export function parseLog(_raw: string | undefined): ExperimentLog {
 
 export function serializeLog(log: ExperimentLog): string {
   return JSON.stringify(log)
+}
+
+const LOG_FILE_PATH = path.join(process.cwd(), '.next', 'experiment-log.json')
+
+declare global {
+  var __labExperimentLog: string | undefined
+}
+
+export function readStoredLog(cookieRaw?: string): ExperimentLog {
+  try {
+    if (fs.existsSync(LOG_FILE_PATH)) {
+      const fileContent = fs.readFileSync(LOG_FILE_PATH, 'utf-8')
+      const parsed = parseLog(fileContent)
+      globalThis.__labExperimentLog = serializeLog(parsed)
+      return parsed
+    }
+  } catch {
+    // Fallback a memoria o cookie si el sistema de archivos no está disponible
+  }
+
+  if (globalThis.__labExperimentLog) {
+    return parseLog(globalThis.__labExperimentLog)
+  }
+
+  return parseLog(cookieRaw)
+}
+
+export function writeStoredLog(log: ExperimentLog): string {
+  const validated = parseLog(serializeLog(log))
+  const serialized = serializeLog(validated)
+  globalThis.__labExperimentLog = serialized
+
+  try {
+    fs.mkdirSync(path.dirname(LOG_FILE_PATH), { recursive: true })
+    fs.writeFileSync(LOG_FILE_PATH, serialized, 'utf-8')
+  } catch {
+    // Si el entorno es de solo lectura, se conserva en memoria y cookie
+  }
+
+  return serialized
 }
 
 const numberFormat = new Intl.NumberFormat('es-AR', {
